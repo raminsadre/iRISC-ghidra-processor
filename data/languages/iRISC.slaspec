@@ -353,6 +353,16 @@ MASK: 0                         is mask=0x0 { export 0xffffffff:8; }
     RD = (RSsrc >> shift:1) & MASK;
 }
 
+:ext RD, RSsrc, RTsrc, imm16 is op=0x36 & RD & RSsrc & RTsrc & imm16 {
+    local tmp:8 = RSsrc >> RTsrc;
+    local val:8 = tmp & ((1 << imm16) - 1);
+    RD = val;
+    Z32 = (val == 0);
+    C32 = (val != 0);
+    N32 = 0;
+    V32 = 0;
+}
+
 :alu.^funct RD, RSsrc, RTsrc    is op=0x3f & funct & RD & RSsrc & RTsrc { RD = UnkAlu(funct:2, RSsrc:8, RTsrc:8); }
 
 :add RD, RSsrc, RTsrc           is op=0x3f & funct=0x000 & RD & RSsrc & RTsrc { RD = RSsrc + RTsrc; }
