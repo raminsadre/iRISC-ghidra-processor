@@ -164,6 +164,7 @@ cc: "gt32"  is cmpop=0x01 { tmp1 = C32 == 1; export tmp1; }
 cc: "lt32"  is cmpop=0x02 { tmp1 = Z32 == 0 && N32 == 0; export tmp1; }
 cc: "ugt32" is cmpop=0x03 { tmp1 = C32 == 1; export tmp1; }
 cc: "ult32" is cmpop=0x04 { tmp1 = Z32 == 0 && C32 == 0; export tmp1; }
+cc: "eq32?" is cmpop=0x0a { export Z32; }
 cc: "neg32" is cmpop=0x0c { export V32; }
 cc: "pos32" is cmpop=0x0d { tmp1 = V32 == 0 && Z32 == 0; export tmp1; }
 
@@ -353,9 +354,14 @@ MASK: 0                         is mask=0x0 { export 0xffffffff:8; }
     RD = (RSsrc >> shift:1) & MASK;
 }
 
-:ext RD, RSsrc, RTsrc, imm16 is op=0x36 & RD & RSsrc & RTsrc & imm16 {
-    local tmp:8 = RSsrc >> RTsrc;
-    local val:8 = tmp & ((1 << imm16) - 1);
+# extracts <shamt> bits at position <imm11>
+# The sizes of the last two operands are probably wrong
+# Based on occurances of this instruction, the shamt value is probably around 4 bits.
+# It's also not clear what flags this instruction sets. It's often followed by a
+# conditional jump with cmpop=0x0a.
+:ext? RD, RSsrc, shamt, imm11 is op=0x36 & RD & RSsrc & shamt & imm11 {
+    local tmp:8 = RSsrc >> shamt;
+    local val:8 = tmp & ((1 << imm11) - 1);
     RD = val;
     Z32 = (val == 0);
     C32 = (val != 0);
@@ -400,11 +406,44 @@ MASK: 0                         is mask=0x0 { export 0xffffffff:8; }
 :ret.r RD, RSsrc, RTlosrc       is op=0x3f & funct=0x025 & RD & rs=8 & RSsrc & RTlosrc & rt=3 { return [RTlosrc]; }
 :jalr RTlosrc                   is op=0x3f & funct=0x025 & rd=0 & rs=0 & RTlosrc { call [RTlosrc]; }
 
+# destination := index of highest bit set + 1, or 0 if source value is 0
+# This is a guess based on one occurance of this instruction
+:bitlength? RD, RSsrc               is op=0x3f & funct=0x071 & RD & RSsrc & rt=0 {
+    local x:8 = RSsrc;
+    local n:8 = 0;
+
+    if (x != 0) goto <nonzero>;
+    RD = 0;
+    goto <done>;
+<nonzero>
+    if (x==0) goto <found>;
+    x = x >> 1;
+    n = n + 1;
+    goto <nonzero>;
+<found>
+    RD = n;
+    Z64 = (RD == 0);
+    Z32 = ((RD & 0xffffffff) == 0);
+    N64 = (RD s< 0);
+    N32 = ((RD & 0x80000000) != 0);
+    C64 = 0;
+    C32 = 0;
+    V64 = 0;
+    V32 = 0;
+<done>
+}
+
 :ret.d RD, RSsrc, RTsrc         is op=0x3f & funct=0x02d & RD & RSsrc & RTsrc { return [retaddr]; }
 
 :shl64.r RD, RSsrc, RTsrc       is op=0x3f & funct=0x080 & RD & RSsrc & RTsrc { RD = RSsrc << RTsrc; }
 :shl64.i RD, RSsrc, shamt       is op=0x3f & funct=0x081 & RD & RSsrc & shamt { RD = RSsrc << shamt:1; }
 :shr RDlo, RSlosrc, shamt       is op=0x3f & funct=0x083 & RDlo & RSlosrc & shamt { RDlo = RSlosrc >> shamt:1; }
 :shr.85 RDlo, RSlosrc, shamt    is op=0x3f & funct=0x085 & RDlo & RSlosrc & shamt { RDlo = RSlosrc >> shamt:1; }
+
+# Arithmetic right shift (preserving the sign bit)
+# Not yet sure whether it's a 32-bit or 64-bit operation. Based on the occurances,
+# it probably is a 32-bit operation. 
+:ashr.i? RD, RSsrc, shamt     is op=0x3f & funct=0x089 & RD & RSsrc & shamt { RD = RSsrc s>> shamt:1; }
+
 :shr RDlo, RSlosrc, shamt       is op=0x3f & funct=0x08a & RDlo & RSlosrc & shamt { RDlo = RSlosrc >> shamt:1; }
 :shr RDlo, RShisrc, shamt       is op=0x3f & funct=0x08b & RDlo & RShisrc & shamt { RDlo = RShisrc >> shamt:1; }
